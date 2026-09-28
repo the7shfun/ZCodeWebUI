@@ -1,4 +1,6 @@
-# ZCode
+# ZCodeWebUI
+
+> **Web 自托管增强 Fork** · 基于 [zai-org/ZCode](https://github.com/zai-org/ZCode) v3.14.3 · [与上游的差异](#本-fork-做了什么)
 
 <div align="center">
   <img src="public/logo/icons/1024x1024.png" alt="ZCode" width="128" height="128" />
@@ -10,6 +12,59 @@
 <p align="center">
   简体中文 | <a href="README.en.md">English</a>
 </p>
+
+## 本 Fork 做了什么
+
+这个 fork 专注于一件事：**让 `zcode --web` 自托管形态的体验追平官方桌面客户端**。适合在 NAS / 服务器上跑 Web 版、用手机浏览器访问自己算力的用户。
+
+相对上游 v3.14.3 的全部差异只有两个补丁（各一个 commit，rebase 友好）：
+
+| # | 补丁 | 解决的问题 |
+| --- | --- | --- |
+| 1 | **Web 端置顶复活** | 上游 web server 未注册 `IWindowControllerService`，侧栏 Pinned 分区永远拿空列表——点置顶后任务从列表"蒸发"（数据完好，纯服务面缺失）。本 fork 将桌面 host 的 windowHostController 三件套移植进 `packages/services` 并在 `createLocalServices` 注册，renderer 零改动，Web 端与桌面端/官方 remote 页面走同一套任务列表聚合面。 |
+| 2 | **移动端适配** | 上游 Web UI 在 ≤900px 视口是桌面布局硬塞（侧栏常驻挤压主区）。本 fork 提供全屏抽屉式会话列表 + 会话态常驻「‹ 会话列表」返回栏 + 浏览器返回手势接管；>900px 桌面端零影响。 |
+
+**为什么不改桌面端？** 官方桌面客户端是功能完整的形态；官方 `zcode.z.ai/remote/v4` 手机页面是闭源云中转 + 桌面 host 的组合，无法自托管。自托管 Web 是唯一可完全自主的浏览器形态，但上游对它的服务面做了裁剪——本 fork 的目标就是补齐这块。
+
+## 构建与部署（Linux / NAS 实测）
+
+在[上游初始化步骤](#初始化)的基础上，自托管 Web 包的构建与运行要点：
+
+```bash
+# 1. install（desktop postinstall 在 Linux 必须给 Electron 镜像，无跳过开关）
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ pnpm install
+
+# 2. bootstrap 后，上游遗留问题：@zcode/shared 无 build 脚本但 TUI 打包需要其 dist
+pnpm --filter @zcode/shared exec tsc -p tsconfig.json
+
+# 3. 打运行包（base-url 仅写入 install.sh，自用传哑值即可）
+node scripts/build-zcode.mjs --skip-build --base-url http://127.0.0.1/deps/zcode/
+# 产物：dist/zcode/releases/<ver>/zcode-<ver>.tar.gz，解包即运行目录
+
+# 4. 运行（数据目录务必显式指定，避免写 ~/.zcode）
+node <解包目录>/bin/zcode.mjs --web --host 0.0.0.0 --port 8213 \
+  --workspace <你的工作区> --no-open --token <访问令牌>
+```
+
+`ZCODE_DATA_BASE_DIR` 环境变量可重定向全部数据（会话 / tasks-index / 设置）。非本机监听时 token 强制启用，是 Web 形态的唯一闸门，公网暴露请自行加反代认证。
+
+## 与上游同步
+
+```bash
+git fetch upstream && git rebase upstream/main && git push -f origin main
+```
+
+冲突通常只有 `packages/services/src/node.ts` 服务注册链一处：保住 `.register(IWindowControllerService, ...)` 所在行即可。若上游重构了 `packages/desktop/src/host/windowHostController*`，以桌面端最新实现为准重新移植。
+
+## 许可
+
+Apache-2.0，随上游。本 fork 的补充代码同样以 Apache-2.0 提供。
+
+---
+
+以下为上游原始 README：
+
+# ZCode
 
 
 
