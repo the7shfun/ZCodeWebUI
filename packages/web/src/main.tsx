@@ -2417,6 +2417,78 @@ async function bootstrapWebRemoteControlByToken(params: URLSearchParams): Promis
   }
 }
 
+/*
+ * 断线自愈（web-host fork）：
+ * 上游 web 版 WS 断开后不做任何处理（桌面端走本地 IPC 无此问题）——浏览器后台
+ * 节流/休眠/网络切换会杀掉 WS，回前台后整个 UI 冻结在最后一帧，运行中的任务
+ * 不再更新，只能手动刷新。这里补齐：onClose 与 visibilitychange 双钩子检测，
+ * 断线后挂横幅并探测 server；server 可达即整页 reload（走全量 snapshot 恢复，
+ * 与手动刷新等价；zcode 输入草稿本地持久化，刷新不丢）。
+ */
+let activeSocket: WebSocket | null = null;
+let connectionRecoveryStarted = false;
+
+function isSocketAlive(): boolean {
+  return activeSocket?.readyState === WebSocket.OPEN;
+}
+
+function renderConnectionLostBanner(): HTMLElement {
+  const banner = document.createElement("div");
+  banner.id = "zcode-connection-lost-banner";
+  banner.setAttribute("role", "alert");
+  banner.textContent = /^zh\b/i.test(navigator.language)
+    ? "连接已断开，正在重连…"
+    : "Connection lost. Reconnecting…";
+  Object.assign(banner.style, {
+    position: "fixed",
+    top: "0",
+    left: "0",
+    right: "0",
+    zIndex: "2147483647",
+    padding: "8px 16px",
+    textAlign: "center",
+    fontSize: "13px",
+    background: "#7f1d1d",
+    color: "#fecaca",
+    borderBottom: "1px solid #b91c1c",
+  });
+  document.body.appendChild(banner);
+  return banner;
+}
+
+function beginConnectionRecovery(): void {
+  if (connectionRecoveryStarted) return;
+  connectionRecoveryStarted = true;
+  renderConnectionLostBanner();
+  // 指数退避探测 server；可达即 reload 由服务端全量状态恢复会话视图。
+  const probe = (delayMs: number) => {
+    window.setTimeout(() => {
+      fetch("/api/server-info", { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            window.location.reload();
+            return;
+          }
+          probe(Math.min(delayMs * 2, 15000));
+        })
+        .catch(() => probe(Math.min(delayMs * 2, 15000)));
+    }, delayMs);
+  };
+  probe(1000);
+}
+
+function watchConnectionHealth(): void {
+  document.addEventListener("visibilitychange", () => {
+    // 手机浏览器后台冻结时 close 事件可能被节流，回前台主动检查一次。
+    if (document.visibilityState === "visible" && !isSocketAlive()) {
+      beginConnectionRecovery();
+    }
+  });
+  window.addEventListener("online", () => {
+    if (!isSocketAlive()) beginConnectionRecovery();
+  });
+}
+
 async function bootstrapWebApp() {
   const params = new URLSearchParams(window.location.search);
   if (isWebOAuthCallback(params)) {
@@ -2478,7 +2550,13 @@ async function bootstrapWebApp() {
 
   try {
     const services = await connectViaWebSocket(bootstrap.wsUrl, {
-      onClose: () => {},
+      onOpenSocket: (socket) => {
+        activeSocket = socket;
+      },
+      onClose: () => {
+        // 根 ws 关闭即整个 RPC 面失效；发起探测式自愈而不是静默冻结。
+        beginConnectionRecovery();
+      },
     });
     const platform = createWebPlatform();
     document.title = "ZCode - Web + Server";
@@ -2504,6 +2582,7 @@ async function bootstrapWebApp() {
         </ZCodeIntlProvider>
       </AppErrorBoundary>,
     );
+    watchConnectionHealth();
   } catch (error) {
     renderWebRemoteControlFailure(
       error && typeof error === "object" && "reason" in error
