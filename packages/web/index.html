@@ -192,6 +192,10 @@
         color: #ffffff;
       }
     </style>
+    <!-- 移动端适配补丁(v4)：≤900px 会话列表=全屏抽屉+常驻返回栏；桌面(>900px)零影响。
+         自 3.14.0 运行包注入层迁移至源码；回滚=删这两行 + public/ 下两个 zcode-mobile-fix 文件。 -->
+    <link rel="stylesheet" href="/zcode-mobile-fix-v4.css" />
+    <script src="/zcode-mobile-fix-v2.js" defer></script>
   </head>
   <body>
     <div id="root">

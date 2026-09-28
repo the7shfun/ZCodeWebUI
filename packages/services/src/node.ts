@@ -3,7 +3,7 @@ import { createGenUiService } from "./gen-ui/node.js";
 import { channelReplyHostRequestSchema, channelReplyResultSchema } from "@zcode/shared";
 /* eslint-disable max-lines -- host process 服务注册和启动装配需要集中维护，拆散后会更难追踪依赖注入顺序 */
 // Node.js service implementations — NOT safe to import in browser code
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -322,6 +322,8 @@ import { ICredentialService } from "./credential/credential.js";
 import { IBroadcastService } from "./broadcast/broadcast.js";
 import { IZCodeTaskService } from "./session/zcodeTaskService.js";
 import { IZCodeAgentService } from "./zcode-agent/zcodeAgent.js";
+import { IWindowControllerService } from "./window-controller/windowController.js";
+import { createWindowHostControllerRuntime } from "./window-controller/windowHostControllerService.js";
 import type { CuaOperationStateReporter } from "./zcode-agent/cuaOperationTurnTracker.js";
 import { IZCodeSessionService } from "./zcode-session/zcodeSession.js";
 import {
@@ -2363,6 +2365,34 @@ export function createLocalServices(options: {
   const marketingAssets = createMarketingAssetRegistry({
     allowLoopback: ZCODE_ENV === "test" || process.env.NODE_ENV === "development",
   });
+  // web-host Controller 聚合面（09-28 自 desktop host 移植）：renderer 侧栏的置顶/任务列表
+  // 依赖 IWindowControllerService（见 useGlobalTaskList）；桌面 host 一直注册，而 web server
+  // 缺它会让 pinned 分区永远拿空列表、置顶操作后任务从侧栏蒸发。这里以本地 source
+  // 装配同一 runtime，补齐 zcode --web 形态与官方 remote 页面等价的服务面。
+  const windowControllerLogger = createServiceLogger("window-controller");
+  const windowHostControllerRuntime = createWindowHostControllerRuntime({
+    createId: () => randomUUID(),
+    onSourceError: (scope, operation, error) => {
+      windowControllerLogger.warn(
+        `window Controller source ${operation} failed, workspaceKey=${scope.workspaceIdentity?.trim() || scope.workspacePath}`,
+        error,
+      );
+    },
+    resolveSource: (scope) => {
+      // web server 只承载本地 workspace；remote session（SSH/远端 host）不属于本形态，
+      // 与 desktop 本地分支一致地透传 workspaceIdentity，由 taskService 自行兜底。
+      return {
+        scope: {
+          kind: "local" as const,
+          workspacePath: scope.workspacePath,
+          ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+        },
+        taskService: zcodeTaskService,
+        agentService: zcodeAgentService,
+        sourceAvailability: "online" as const,
+      };
+    },
+  });
   const services = new ServiceCollection()
     .register(
       IMarketingTouchService,
@@ -2392,6 +2422,7 @@ export function createLocalServices(options: {
     .register(IOnboardingRecordService, onboardingRecordService)
     .register(ICredentialService, credentialService)
     .register(IBroadcastService, broadcastService)
+    .register(IWindowControllerService, windowHostControllerRuntime.service)
     .register(IZCodeTaskService, zcodeTaskService)
     .register(IZCodeAgentService, zcodeAgentService)
     .register(IZCodeSessionService, zcodeSessionService)

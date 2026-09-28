@@ -1,0 +1,131 @@
+/*
+ * ZCode 移动端适配补丁 v4 (mobile-fix)
+ * 范围: 视口 ≤900px；桌面(>900px)零影响。
+ * 机制: 会话列表侧栏([data-workspace-sidebar-panel]) 变全屏抽屉，
+ *       主会话区(#content) 解除 min-width 吃满整行。
+ * 返回入口（v4 重设计，废除悬浮钮——它会压在正文/行按钮上）：
+ *       - 会话态: 顶部 40px「‹ 会话列表」栏(#zf-mobile-chatbar)，
+ *         #content margin-top 同步让位，零重叠；
+ *       - 列表态: 抽屉顶栏「‹ 返回」(#zf-mobile-drawer-bar)。
+ * 历史: v2 补抽屉不透明底色(v1 透明=聊天透过来叠加)；
+ *       v3 portal 抬升收窄排除 tooltip(app 常驻 context-reset-reminder 会糊住按钮)。
+ * 回滚: index.html 删掉 zcode-mobile-fix 两行引用即可。
+ */
+#zf-mobile-chatbar,
+#zf-mobile-drawer-bar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  /* 主会话区解除 320px 下限，吃满整行；顶部给返回栏让出 40px */
+  #content,
+  [class*="min-w-[320px]"] {
+    min-width: 0 !important;
+  }
+
+  #content {
+    margin-top: 40px !important;
+  }
+
+  /* 侧栏拖拽手柄在手机上没有意义 */
+  [data-testid="resizable-handle"] {
+    display: none !important;
+  }
+
+  /* 侧栏 → 全屏抽屉（默认平移出屏，保留原有 width/opacity 过渡语义） */
+  [data-workspace-sidebar-panel="true"] {
+    position: absolute !important;
+    top: 40px !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    z-index: 80;
+    transform: translateX(-104%);
+    transition: transform 0.22s ease;
+    will-change: transform;
+  }
+
+  html.zf-drawer-open [data-workspace-sidebar-panel="true"] {
+    transform: none;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    /* 关键：抽屉必须不透明。桌面布局里侧栏背后是空背景，透明无所谓；
+       叠到会话区上面后，透明=聊天内容整个透过来（v1 的「两界面叠加」） */
+    background: var(--color-background, #161616) !important;
+    box-shadow: 0 0 48px rgb(0 0 0 / 55%);
+  }
+
+  /* 会话态返回栏：常驻顶部，点它开抽屉（v1/v2/v3 的悬浮 ☰ 已废除） */
+  #zf-mobile-chatbar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 86;
+    height: 40px;
+    align-items: center;
+    padding: 0 8px;
+    background: var(--color-background, #161616);
+    border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+    color: var(--color-foreground, #e4e4e7);
+  }
+
+  html.zf-drawer-open #zf-mobile-chatbar {
+    display: none !important;
+  }
+
+  /* 列表态抽屉顶栏：提供「‹ 返回」 */
+  #zf-mobile-drawer-bar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 85;
+    height: 40px;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px;
+    background: var(--color-background, #161616);
+    border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+    color: var(--color-foreground, #e4e4e7);
+  }
+
+  html:not(.zf-drawer-open) #zf-mobile-drawer-bar {
+    display: none !important;
+  }
+
+  #zf-mobile-back,
+  #zf-mobile-back2 {
+    height: 30px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  #zf-mobile-back:active,
+  #zf-mobile-back2:active {
+    background: rgb(255 255 255 / 10%);
+  }
+
+  /* 抽屉打开期间，radix 弹层要盖在抽屉(z-80)上面，否则列表里的长按菜单、
+     「…」菜单、确认框会被抽屉压住无法交互。
+     只抬 popper(菜单/下拉)与 portal 内的对话框内容；tooltip 不抬——app 会在
+     手机上常驻挂一个 context-reset-reminder tooltip，抬上来会糊住返回栏。 */
+  html.zf-drawer-open
+    [data-radix-popper-content-wrapper]:not(:has([data-slot="tooltip-content"])) {
+    z-index: 300 !important;
+  }
+
+  html.zf-drawer-open
+    [data-radix-portal]
+    :is(.z-50, [role="dialog"], [role="alertdialog"]) {
+    z-index: 300 !important;
+  }
+}
