@@ -1,0 +1,30 @@
+services:
+  zcode-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: zcode-web:local
+    container_name: zcode-web
+    user: "1000:1001" # 对齐宿主机 the7shfun，卷内读写无权限问题
+    restart: unless-stopped
+    ports:
+      - "8213:3030"
+    environment:
+      - ZCODE_DATA_BASE_DIR=/data
+    volumes:
+      # 铁律：数据一律落 /vol2，不碰系统盘
+      - /vol2/1000/Walker/_代码库/_Github/zcode-data:/data
+      - /vol2/1000/Walker/_代码库/_Github/zcode-workspace:/workspace
+    command:
+      - node
+      - /app/zcode/bin/zcode.mjs
+      - --web
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3030"
+      - --workspace
+      - /workspace
+      - --no-open
+      - --token
+      - ${ZCODE_WEB_TOKEN:?环境变量提供访问令牌,勿入库} # 访问令牌从环境变量读，勿入库
