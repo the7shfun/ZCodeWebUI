@@ -2985,11 +2985,15 @@ export async function getTaskTokenUsage(
  *   若漏掉黑名单，SessionResumed 后的准入状态事件会把历史任务显示为“刚刚”。
  * - HookRun*：hook lifecycle 是 turn/session 的内部执行细节；正常 turn 已有消息、工具等
  *   活动事件负责更新时间，冷恢复的 SessionStart hook 不能单独制造一次用户活动。
+ * - FollowupModeChanged（fork 补丁 2026-10-12）：UI 打开会话时 SessionPane 会自动补发
+ *   setFollowupMode(guide) 同步命令，runtime 回一条 FollowupModeChanged 控制事件（纯内存
+ *   不落库）；不豁免则点开任意老会话都会被记为「刚刚」并顶到列表最前，打乱顺序。
  */
 function isNonActivitySessionEvent(event: SessionEvent): boolean {
   return (
     event.type === SessionEventType.ModelSelected ||
     event.type === SessionEventType.SessionModeChanged ||
+    event.type === SessionEventType.FollowupModeChanged ||
     event.type === SessionEventType.SessionTitleUpdated ||
     event.type === SessionEventType.SessionResumed ||
     event.type === SessionEventType.WorkspaceHookAdmissionUpdated ||
